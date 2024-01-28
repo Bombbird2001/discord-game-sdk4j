@@ -1,9 +1,6 @@
 package de.jcm.discordgamesdk;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -48,22 +45,21 @@ public class Core implements AutoCloseable
 	 */
 	public static void init(File discordLibrary, String tmpDirPrefix)
 	{
-		File tmpDirRoot = new File(System.getProperty("java.io.tmpdir"));
+		File dirRootPrefix = new File(System.getProperty("java.io.tmpdir"), tmpDirPrefix);
 
 		// Delete old tmp directories
-		try (Stream<Path> stream = Files.find(tmpDirRoot.toPath(), Integer.MAX_VALUE,
-				(path, attr) -> attr.isDirectory() && path.getFileName().toString().startsWith(tmpDirPrefix))) {
-			stream.forEach(path -> {
-				try (Stream<Path> dirStream = Files.walk(path)) {
-					dirStream.map(Path::toFile)
-							.sorted(Comparator.reverseOrder())
-							.forEach(File::delete);
-				} catch (IOException ignored) {}
-			});
-		} catch (IOException ignored) {}
+		if (dirRootPrefix.exists() && dirRootPrefix.isDirectory()) {
+			try (Stream<Path> dirStream = Files.walk(dirRootPrefix.toPath())) {
+				dirStream.map(Path::toFile)
+						.sorted(Comparator.reverseOrder())
+						.forEach(File::delete);
+			} catch (IOException | UncheckedIOException e) {
+				e.printStackTrace();
+			}
+		}
 
-		File tempDir = new File(tmpDirRoot, tmpDirPrefix+"-"+System.nanoTime());
-		if(!(tempDir.exists() && tempDir.isDirectory()) && !tempDir.mkdir())
+        File tempDir = new File(dirRootPrefix, String.valueOf(System.nanoTime()));
+		if(!(tempDir.exists() && tempDir.isDirectory()) && !tempDir.mkdirs())
 			throw new RuntimeException(new IOException("Cannot create temporary directory"));
 		tempDir.deleteOnExit();
 		init(discordLibrary, tempDir);
