@@ -8,6 +8,8 @@ import java.net.HttpURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -15,6 +17,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -40,12 +43,26 @@ public class Core implements AutoCloseable
 	 * You may call this method more than once which unloads the old shared object and loads the new one.
 	 *
 	 * @param discordLibrary Location of Discord's native library.
-	 *
+	 * @param tmpDirPrefix Prefix for the temporary directory, to which the discordLibrary will be copied to
 	 * @throws UnsatisfiedLinkError if Discord's native library can not be loaded
 	 */
-	public static void init(File discordLibrary)
+	public static void init(File discordLibrary, String tmpDirPrefix)
 	{
-		File tempDir = new File(System.getProperty("java.io.tmpdir"), "java-discord-game-sdk-"+System.nanoTime());
+		File tmpDirRoot = new File(System.getProperty("java.io.tmpdir"));
+
+		// Delete old tmp directories
+		try (Stream<Path> stream = Files.find(tmpDirRoot.toPath(), Integer.MAX_VALUE,
+				(path, attr) -> attr.isDirectory() && path.getFileName().toString().startsWith(tmpDirPrefix))) {
+			stream.forEach(path -> {
+				try (Stream<Path> dirStream = Files.walk(path)) {
+					dirStream.map(Path::toFile)
+							.sorted(Comparator.reverseOrder())
+							.forEach(File::delete);
+				} catch (IOException ignored) {}
+			});
+		} catch (IOException ignored) {}
+
+		File tempDir = new File(tmpDirRoot, tmpDirPrefix+"-"+System.nanoTime());
 		if(!(tempDir.exists() && tempDir.isDirectory()) && !tempDir.mkdir())
 			throw new RuntimeException(new IOException("Cannot create temporary directory"));
 		tempDir.deleteOnExit();
@@ -150,7 +167,7 @@ public class Core implements AutoCloseable
 	 *
 	 * @throws UnsatisfiedLinkError if Discord's native library can not be loaded
 	 */
-	public static void init(URL url)
+	public static void init(URL url, String tmpDirPrefix)
 	{
 		String osName = System.getProperty("os.name").toLowerCase(Locale.ROOT);
 		String protocol = url.getProtocol();
@@ -160,7 +177,7 @@ public class Core implements AutoCloseable
 			try
 			{
 				File file = new File(url.toURI());
-				init(file);
+				init(file, tmpDirPrefix);
 			}
 			catch(URISyntaxException e)
 			{
@@ -221,9 +238,11 @@ public class Core implements AutoCloseable
 	 * <p>
 	 * The resource will be read and copied into a temporary file.
 	 *
+	 * @param tmpDirPrefix Prefix for the temporary directory, to which the discordLibrary will be copied to
+	 *
 	 * @throws UnsatisfiedLinkError if Discord's native library can not be loaded
 	 */
-	public static void initFromClasspath()
+	public static void initFromClasspath(String tmpDirPrefix)
 	{
 		// Find out which name Discord's library has (.dll for Windows, .so for Linux)
 		String name = "discord_game_sdk";
@@ -259,7 +278,7 @@ public class Core implements AutoCloseable
 		// Path of Discord's library inside the ZIP
 		String res = "/lib/"+arch+"/"+name+suffix;
 
-		Core.init(Objects.requireNonNull(Core.class.getResource(res)));
+		Core.init(Objects.requireNonNull(Core.class.getResource(res)), tmpDirPrefix);
 	}
 
 	private static File downloadDiscordLibrary() throws IOException
@@ -355,21 +374,23 @@ public class Core implements AutoCloseable
 	 * <p>
 	 * The resource will be read and copied into a temporary file.
 	 *
+	 * @param tmpDirPrefix Prefix for the temporary directory, to which the discordLibrary will be copied to
+	 *
 	 * @throws UnsatisfiedLinkError if Discord's native library can not be loaded
 	 */
-	public static void initDownload() throws IOException
+	public static void initDownload(String tmpDirPrefix) throws IOException
 	{
 		File f = downloadDiscordLibrary();
 		if(f == null)
 			throw new FileNotFoundException("cannot find native library in downloaded zip file");
-		init(f);
+		init(f, tmpDirPrefix);
 	}
 
 	/**
 	 * Loads Discord's SDK library.
 	 * <p>
 	 * This does not extract nor load the JNI native library.
-	 * If you want to do that, please use {@link Core#init(File)}
+	 * If you want to do that, please use {@link Core#init(File, String)}
 	 * which extracts and loads the JNI native and then calls this method.
 	 * @param discordPath Location of Discord's native library.
 	 *                    <p>On Windows the filename (last component of the path) must be

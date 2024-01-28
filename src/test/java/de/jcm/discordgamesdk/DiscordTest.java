@@ -67,7 +67,7 @@ public class DiscordTest
 		{
 			discordLibraryPath = "./discord_game_sdk/lib/x86_64/discord_game_sdk.so";
 		}
-		Core.init(new File(discordLibraryPath));
+		Core.init(new File(discordLibraryPath), "java-discord-game-sdk");
 	}
 
 	@Test
